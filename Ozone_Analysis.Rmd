@@ -1,0 +1,513 @@
+---
+title: "Geostatistical Analysis of Ozone Concentrations in California"
+author: "Daniel Vasilevko"
+date: "2026-05-1"
+output: pdf_document
+---
+
+```{r}
+library(sp)
+library(gstat)
+library(geoR)
+library(ggplot2)
+library(maps)
+
+california <- map_data("state")
+california <- subset(california, region == "california")
+```
+
+```{r}
+data <- read.csv("Records.csv")
+
+relevant <- data[data$Date == "03/10/2025", ]
+
+mean(relevant$Daily.Max.8.hour.Ozone.Concentration)
+```
+
+This data was collected at 142 unique locations across the state of California. The specific day that will be looked at 3/10/2025. The variable looked will be maximum of ozone concentartion over a period of any 8 consecutive hours in a day. The variable ranges from 0.022 to 0.066 with a mean 0.0471338.
+
+## Histogram
+
+```{r}
+
+ggplot(relevant, aes(x = Daily.Max.8.hour.Ozone.Concentration)) +
+  geom_histogram(binwidth = 0.005,  
+                 fill = "skyblue",
+                 color = "black") +
+  labs(
+    title = "Histogram of Daily Max 8-hour Ozone Concentration",
+    x = "Daily Max 8-hour Ozone (ppm)",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+# ECDF
+
+```{r}
+ggplot(relevant, aes(x = Daily.Max.8.hour.Ozone.Concentration)) +
+  stat_ecdf(geom = "step", color = "blue", size = 1) +
+  labs(
+    title = "ECDF of Daily Max 8-hour Ozone",
+    x = "Daily Max 8-hour Ozone (ppm)",
+    y = "Cumulative Probability"
+  ) +
+  theme_minimal()
+```
+
+## QQ Plot
+
+```{r}
+ggplot(relevant, aes(sample = Daily.Max.8.hour.Ozone.Concentration)) +
+  stat_qq() +
+  stat_qq_line() +
+  theme_minimal() +
+  labs(title = "QQ plot of Ozone")
+```
+
+## Boxplot
+
+```{r}
+ggplot(relevant, aes(x = "", y = Daily.Max.8.hour.Ozone.Concentration)) +
+  geom_boxplot(fill = "skyblue") +
+  labs(y = "Daily Max 8-hour Ozone (ppm)", title = "Boxplot of Ozone") +
+  theme_minimal()
+```
+
+## H Scatterplot
+
+```{r}
+coordinates(relevant) <- ~Site.Longitude + Site.Latitude
+
+dist_matrix <- spDists(coordinates(relevant))
+
+ozone <- data$Daily.Max.8.hour.Ozone.Concentration
+
+pairs <- which(dist_matrix > 0 & dist_matrix < 0.5, arr.ind = TRUE)
+
+plot(
+  ozone[pairs[,1]],
+  ozone[pairs[,2]],
+  xlab = "Z(s_i)",
+  ylab = "Z(s_j)",
+  main = "h-Scatter Plot (h = 50 km)"
+)
+
+abline(0,1,col="red")
+```
+
+## Bubble Plot
+
+```{r}
+symbols(
+  relevant$Site.Longitude,
+  relevant$Site.Latitude,
+  circles = relevant$Daily.Max.8.hour.Ozone.Concentration,
+  inches = 0.2,
+  xlab = "Longitude",
+  ylab = "Latitude",
+  main = "Bubble Plot of Ozone Concentration",
+  bg = "blue",
+  fg = "black"
+)
+```
+
+
+## Variograms
+
+```{r}
+relevant <- as.data.frame(relevant)
+
+ozone_geo <- as.geodata(
+  relevant,
+  coords.col = c("Site.Longitude","Site.Latitude"),
+  data.col = "Daily.Max.8.hour.Ozone.Concentration"
+)
+
+var_classical <- variog(ozone_geo)
+
+fit_exp <- variofit(
+  var_classical,
+  cov.model = "exponential",
+  ini.cov.pars = c(0.00012, 10),
+  nugget = 0.00001
+)
+plot(var_classical)
+lines(fit_exp,col="red")
+
+fit_sph <- variofit(
+  var_classical,
+  cov.model = "spherical",
+  ini.cov.pars = c(0.00012, 10),
+  nugget = 0.00001
+)
+
+plot(var_classical)
+lines(fit_sph,col="red")
+
+fit_gau <- variofit(
+  var_classical,
+  cov.model = "gaussian",
+  ini.cov.pars = c(0.00012, 10),
+  nugget = 0.00003
+)
+
+plot(var_classical)
+lines(fit_gau,col="red")
+```
+
+
+
+
+
+```{r}
+var_robust <- variog(ozone_geo, estimator.type = "modulus")
+
+fit_exp2 <- variofit(
+  var_robust,
+  cov.model = "exponential",
+  ini.cov.pars = c(0.0002, 12),
+  nugget = 0.00001
+)
+plot(var_robust)
+lines(fit_exp2,col="red")
+
+fit_sph2 <- variofit(
+  var_robust,
+  cov.model = "spherical",
+  ini.cov.pars = c(0.00012, 12),
+  nugget = 0.00002
+)
+
+plot(var_robust)
+lines(fit_sph2,col="red")
+
+fit_gau2 <- variofit(
+  var_robust,
+  cov.model = "gaussian",
+  ini.cov.pars = c(0.0002, 12),
+  nugget = 0.00003
+)
+
+plot(var_robust)
+lines(fit_gau2,col="red")
+```
+
+## Dense Grid
+
+```{r}
+x.range <- seq(min(relevant$Site.Longitude),
+               max(relevant$Site.Longitude),
+               length = 100)
+
+y.range <- seq(min(relevant$Site.Latitude),
+               max(relevant$Site.Latitude),
+               length = 100)
+
+grid <- expand.grid(
+  Site.Longitude = x.range,
+  Site.Latitude = y.range
+)
+
+coordinates(relevant) <- ~Site.Longitude + Site.Latitude
+coordinates(grid) <- ~Site.Longitude + Site.Latitude
+gridded(grid) <- TRUE
+
+idw_pred <- idw(
+  Daily.Max.8.hour.Ozone.Concentration ~ 1,
+  relevant,
+  newdata = grid,
+  idp = 2
+)
+
+idw_df <- as.data.frame(idw_pred)
+
+ggplot() +
+  geom_tile(data = idw_df,
+            aes(x = Site.Longitude,
+                y = Site.Latitude,
+                fill = var1.pred),
+            alpha = 0.8) +
+  geom_polygon(data = california,
+               aes(x = long, y = lat, group = group),
+               fill = NA,
+               color = "black",
+               linewidth = 0.6) +
+  coord_fixed(1.3) +
+  scale_fill_viridis_c(name = "Ozone") +
+  labs(title = "IDW Interpolation of Ozone in California",
+       x = "Longitude",
+       y = "Latitude") +
+  theme_minimal()
+
+spplot(idw_pred["var1.pred"],
+       main = "IDW Interpolation of Ozone Concentration")
+```
+
+## Ordinary Kriging
+
+```{r}
+x.range <- seq(min(relevant$Site.Longitude),
+               max(relevant$Site.Longitude),
+               length=100)
+
+y.range <- seq(min(relevant$Site.Latitude),
+               max(relevant$Site.Latitude),
+               length=100)
+
+grid <- expand.grid(x=x.range, y=y.range)
+
+ok_pred <- krige.conv(
+  ozone_geo,
+  locations = grid,
+  krige = krige.control(
+    type.krige = "ok",
+    cov.model = fit_exp$cov.model,
+    cov.pars = fit_exp$cov.pars,
+    nugget = fit_exp$nugget
+  )
+)
+
+sk_pred <- krige.conv(
+  ozone_geo,
+  locations = grid,
+  krige = krige.control(
+    type.krige = "sk",
+    beta = mean(ozone_geo$data),
+    cov.model = fit_exp$cov.model,
+    cov.pars = fit_exp$cov.pars,
+    nugget = fit_exp$nugget
+  )
+)
+
+uk_pred <- krige.conv(
+  ozone_geo,
+  locations = grid,
+  krige = krige.control(
+    type.krige = "ok",
+    trend.d = "1st",
+    trend.l = "1st",
+    cov.model = fit_exp$cov.model,
+    cov.pars = fit_exp$cov.pars,
+    nugget = fit_exp$nugget
+  )
+)
+
+```
+
+## Ordinary Kriging
+
+```{r}
+krig_df <- data.frame(
+  x = grid$x,
+  y = grid$y,
+  pred = ok_pred$predict
+)
+
+relevant_df <- as.data.frame(relevant)
+
+ggplot() +
+  geom_tile(data = krig_df,
+            aes(x = x, y = y, fill = pred),
+            alpha = 0.8) +
+  geom_polygon(data = california,
+               aes(x = long, y = lat, group = group),
+               fill = NA,
+               color = "black",
+               linewidth = 0.6) +
+  geom_point(data = relevant_df,
+             aes(x = Site.Longitude,
+                 y = Site.Latitude),
+             color = "black",
+             size = 1) +
+  coord_fixed(1.3) +
+  scale_fill_viridis_c(name = "Ozone") +
+  labs(title = "Ordinary Kriging Prediction of Ozone",
+       x = "Longitude",
+       y = "Latitude") +
+  theme_minimal()
+
+image(ok_pred)
+points(ozone_geo$coords)
+```
+
+## Simple Kriging
+
+```{r}
+krig_df <- data.frame(
+  x = grid$x,
+  y = grid$y,
+  pred = sk_pred$predict
+)
+
+relevant_df <- as.data.frame(relevant)
+
+ggplot() +
+  geom_tile(data = krig_df,
+            aes(x = x, y = y, fill = pred),
+            alpha = 0.8) +
+  geom_polygon(data = california,
+               aes(x = long, y = lat, group = group),
+               fill = NA,
+               color = "black",
+               linewidth = 0.6) +
+  geom_point(data = relevant_df,
+             aes(x = Site.Longitude,
+                 y = Site.Latitude),
+             color = "black",
+             size = 1) +
+  coord_fixed(1.3) +
+  scale_fill_viridis_c(name = "Ozone") +
+  labs(title = "Simple Kriging Prediction of Ozone",
+       x = "Longitude",
+       y = "Latitude") +
+  theme_minimal()
+
+image(sk_pred)
+points(ozone_geo$coords)
+```
+
+## Universal Kriging
+
+```{r}
+krig_df <- data.frame(
+  x = grid$x,
+  y = grid$y,
+  pred = uk_pred$predict
+)
+
+relevant_df <- as.data.frame(relevant)
+
+ggplot() +
+  geom_tile(data = krig_df,
+            aes(x = x, y = y, fill = pred),
+            alpha = 0.8) +
+  geom_polygon(data = california,
+               aes(x = long, y = lat, group = group),
+               fill = NA,
+               color = "black",
+               linewidth = 0.6) +
+  geom_point(data = relevant_df,
+             aes(x = Site.Longitude,
+                 y = Site.Latitude),
+             color = "black",
+             size = 1) +
+  coord_fixed(1.3) +
+  scale_fill_viridis_c(name = "Ozone") +
+  labs(title = "Universal Kriging Prediction of Ozone",
+       x = "Longitude",
+       y = "Latitude") +
+  theme_minimal()
+
+image(uk_pred)
+points(ozone_geo$coords)
+```
+
+## Cross Validation
+
+```{r}
+cv_exp <- xvalid(
+  ozone_geo,
+  model=fit_exp
+)
+
+cv_sph <- xvalid(
+  ozone_geo,
+  model=fit_sph
+)
+
+cv_gau <- xvalid(
+  ozone_geo,
+  model=fit_gau
+)
+
+cv_ok <- xvalid(
+  ozone_geo,
+  model = fit_exp,
+  krige = krige.control(type.krige = "ok")
+)
+
+cv_sk <- xvalid(
+  ozone_geo,
+  model = fit_exp,
+  krige = krige.control(
+    type.krige = "sk",
+    beta = mean(ozone_geo$data)
+  )
+)
+
+cv_uk <- xvalid(
+  ozone_geo,
+  model = fit_exp,
+  krige = krige.control(
+    type.krige = "ok",
+    trend.d = "1st",
+    trend.l = "1st"
+  )
+)
+
+ME_exp  <- mean(cv_exp$error)
+MSE_exp <- mean(cv_exp$error^2)
+
+ME_sph  <- mean(cv_sph$error)
+MSE_sph <- mean(cv_sph$error^2)
+
+ME_gau  <- mean(cv_gau$error)
+MSE_gau <- mean(cv_gau$error^2)
+
+ME_ok  <- mean(cv_ok$error)
+MSE_ok <- mean(cv_ok$error^2)
+
+ME_sk  <- mean(cv_sk$error)
+MSE_sk <- mean(cv_sk$error^2)
+
+ME_uk  <- mean(cv_uk$error)
+MSE_uk <- mean(cv_uk$error^2)
+
+results <- data.frame(
+  Model=c("Exponential","Spherical","Gaussian","Ordinary Krig", "Simple Krig", "Universal Krig"),
+  ME=c(ME_exp,ME_sph,ME_gau,ME_ok,ME_sk,ME_uk ),
+  MSE=c(MSE_exp,MSE_sph,MSE_gau,MSE_ok,MSE_sk,MSE_uk)
+)
+
+results
+```
+
+## Universal Krig Raster Map
+
+```{r}
+ggplot() +
+  geom_tile(data = krig_df,
+            aes(x = x, y = y, fill = pred)) +
+  geom_contour(data = krig_df,
+               aes(x = x, y = y, z = pred),
+               color = "black",
+               bins = 10) +
+  coord_fixed() +
+  scale_fill_viridis_c(name = "Ozone") +
+  labs(title = "Kriging Prediction Map with Contours",
+       x = "Longitude",
+       y = "Latitude") +
+  theme_minimal()
+
+ggplot() +
+  geom_tile(data = krig_df,
+            aes(x = x, y = y, fill = pred),
+            alpha = 0.9) +
+  geom_contour(data = krig_df,
+               aes(x = x, y = y, z = pred),
+               color = "black",
+               bins = 10) +
+  geom_polygon(data = california,
+               aes(x = long, y = lat, group = group),
+               fill = NA,
+               color = "red",
+               linewidth = 0.6) +
+  coord_fixed(1.3) +
+  scale_fill_viridis_c(name = "Ozone") +
+  labs(title = "Kriging Prediction Surface with Contours",
+       x = "Longitude",
+       y = "Latitude") +
+  theme_minimal()
+
+```
