@@ -6,15 +6,12 @@ data across California, along with the data used in the analysis.
 
 # Repository Structure
 
-* Project173.Rmd - R Markdown file featuring the full geostatistical analysis 
-and visualization of ozone concentrations in California.
-* Project173.pdf - A knitted PDF containing the full output of the analysis, 
-including all plots, variogram fits, kriging predictions, and cross-validation 
+* Ozone_Analysis.Rmd - R Markdown file featuring the full geostatistical analysis and visualization of ozone concentrations in California.
+* Ozone_Analysis.pdf - A knitted PDF containing the full output of the analysis, including all plots, variogram fits, kriging predictions, and cross-validation 
 results.
-* Records.csv - EPA ozone monitoring data containing daily maximum 8-hour ozone 
-concentrations from 142 stations across California.
+* Records.csv - EPA ozone monitoring data containing daily maximum 8-hour ozone concentrations from 142 stations across California.
 
-# What Project173.Rmd Does
+# What Ozone_Analysis.Rmd Does
 
 * Computes summary statistics and produces exploratory visualizations (histogram, ECDF, QQ plot, boxplot) of daily maximum 8-hour ozone concentrations on March 10, 2025.
 * Creates an h-scatterplot to examine spatial dependence between nearby monitoring stations.
